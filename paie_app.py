@@ -69,9 +69,8 @@ def analyse_bulletins(uploaded_files):
 
     if not resultats_mensuels:
         st.info("Aucune donnée n'a pu être extraite des bulletins de paie fournis.")
-        return
+        return # Ne rien retourner si aucun fichier n'a été traité
 
-    st.header("📊 Synthèse Annuelle de la Paie")
     
     # --- PRÉPARATION DES DONNÉES POUR LE TABLEAU ---
     donnees_tableau = []
@@ -79,21 +78,22 @@ def analyse_bulletins(uploaded_files):
 
     for mois_str_key in cles_mois_tries:
         data_mois = resultats_mensuels[mois_str_key]
-        ligne_tableau = {"MOIS": mois_str_key.capitalize()} # Mettre la première lettre en majuscule
+        ligne_tableau = {"MOIS": mois_str_key.capitalize()}
         for cle_longue, cle_courte in cles_a_chercher.items():
-            ligne_tableau[cle_courte] = sum(data_mois[cle_longue])
+            ligne_tableau[cle_courte] = sum(data_mois.get(cle_longue, [])) # Utiliser .get pour plus de sécurité
         donnees_tableau.append(ligne_tableau)
     
     # --- CRÉATION ET AFFICHAGE DU DATAFRAME ---
+    st.header("📊 Synthèse Mensuelle de la Paie")
     if donnees_tableau:
         df = pd.DataFrame(donnees_tableau)
-
-        # Création de la ligne de totaux
-        total_row = df.sum(numeric_only=True).to_frame().T
-        total_row['MOIS'] = 'TOTAL ANNUEL'
         
         # Style du DataFrame pour affichage
         st.dataframe(df, hide_index=True, use_container_width=True)
+        
+        # Calcul des totaux
+        totaux_par_cle = {col: df[col].sum() for col in df.columns if col != 'MOIS'}
+        total_general = sum(totaux_par_cle.values())
         
         # Affichage des totaux de manière distincte en dessous
         st.markdown("---")
@@ -101,19 +101,24 @@ def analyse_bulletins(uploaded_files):
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("IR Exonérées", f"{total_row['IR EXO'].iloc[0]:.2f} €")
+            st.metric("IR Exonérées", f"{totaux_par_cle.get('IR EXO', 0.0):.2f} €")
         with col2:
-            st.metric("IR Non Exonérées", f"{total_row['IR NON EXO'].iloc[0]:.2f} €")
+            st.metric("IR Non Exonérées", f"{totaux_par_cle.get('IR NON EXO', 0.0):.2f} €")
         with col3:
-            st.metric("Indemnité Transport", f"{total_row['IND TRANSPORT'].iloc[0]:.2f} €")
+            st.metric("Indemnité Transport", f"{totaux_par_cle.get('IND TRANSPORT', 0.0):.2f} €")
 
-        total_general = total_row.drop(columns='MOIS').sum(axis=1).iloc[0]
         st.markdown(f"#### Total Général des Sommes Extraites : **{total_general:.2f} €**")
         
-        # Retourner les résultats pour une utilisation potentielle dans le script principal
+        # --- NOUVEAU : Retourner les résultats pour le script principal ---
         return {
-            "dataframe": df,
-            "totals": total_row.to_dict('records')[0]
+            "totaux_par_cle": totaux_par_cle,
+            "total_general": total_general
         }
     else:
         st.info("Aucun montant significatif n'a été extrait pour construire le tableau.")
+        # Retourner un résultat vide mais structuré
+        return {
+            "totaux_par_cle": {cle_courte: 0.0 for cle_courte in cles_a_chercher.values()},
+            "total_general": 0.0
+        }
+
