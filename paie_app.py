@@ -2,6 +2,7 @@ import streamlit as st
 import pdfplumber
 import re
 from datetime import datetime
+import pandas as pd # S'assurer que pandas est importé
 
 def analyse_bulletins(uploaded_files):
     resultats_mensuels = {}
@@ -27,7 +28,11 @@ def analyse_bulletins(uploaded_files):
             return datetime.min
 
     fichiers_tries = sorted(uploaded_files, key=lambda f: extraire_date_nom(f.name))
-    cles_a_chercher = ["IR EXONEREES", "IR NON EXONEREES", "REMB.CARTE NAVIGO"]
+    cles_a_chercher = {
+        "IR EXONEREES": "IR EXO",
+        "IR NON EXONEREES": "IR NON EXO", 
+        "REMB.CARTE NAVIGO": "IND TRANSPORT"
+    }
 
     for fichier in fichiers_tries:
         date_obj = extraire_date_nom(fichier.name)
@@ -37,75 +42,78 @@ def analyse_bulletins(uploaded_files):
 
         date_mois_str = date_obj.strftime("%B %Y")
         if date_mois_str not in resultats_mensuels:
-            resultats_mensuels[date_mois_str] = {cle: [] for cle in cles_a_chercher}
+            resultats_mensuels[date_mois_str] = {cle: [] for cle in cles_a_chercher.keys()}
 
         try:
             with pdfplumber.open(fichier) as pdf:
-                # --- OPTIMISATION 1 : Ne lire que la première page ---
                 if len(pdf.pages) > 0:
                     page_a_analyser = pdf.pages[0]
                     text_page = page_a_analyser.extract_text()
                     
                     if text_page:
-                        # --- APPROCHE FIABLE : Parcourir les lignes de cette page ---
                         for line in text_page.split('\n'):
-                            for cle in cles_a_chercher:
-                                if cle in line: # Si le mot-clé est sur la ligne
-                                    # Regex pour trouver le DERNIER montant sur la ligne
+                            for cle_longue in cles_a_chercher.keys():
+                                if cle_longue in line:
                                     match_montants = re.findall(r"-?\s*\d+[\.,]\d{2}", line)
                                     if match_montants:
                                         valeur_str = match_montants[-1].replace(" ", "").replace(",", ".")
                                         try:
                                             montant = float(valeur_str)
-                                            resultats_mensuels[date_mois_str][cle].append(montant)
+                                            resultats_mensuels[date_mois_str][cle_longue].append(montant)
                                         except ValueError:
-                                            pass # Ignorer si la conversion en nombre échoue
-                    # else:
-                        # st.info(f"La première page de {fichier.name} ne contient pas de texte.")
-                # else:
-                    # st.warning(f"Le fichier {fichier.name} est vide (0 page).")
-
+                                            pass
         except Exception as e:
             st.error(f"Erreur lors de la lecture du fichier PDF {fichier.name} : {e}")
             if date_mois_str not in resultats_mensuels :
-                 resultats_mensuels[date_mois_str] = {cle_init: [] for cle_init in cles_a_chercher}
+                 resultats_mensuels[date_mois_str] = {cle_init: [] for cle_init in cles_a_chercher.keys()}
 
     if not resultats_mensuels:
         st.info("Aucune donnée n'a pu être extraite des bulletins de paie fournis.")
         return
 
-    st.header("📊 Résultats mensuels")
-    totaux = {cle: 0.0 for cle in cles_a_chercher}
+    st.header("📊 Synthèse Annuelle de la Paie")
     
+    # --- PRÉPARATION DES DONNÉES POUR LE TABLEAU ---
+    donnees_tableau = []
     cles_mois_tries = sorted(resultats_mensuels.keys(), key=lambda mois_str_key: datetime.strptime(mois_str_key, "%B %Y"))
 
     for mois_str_key in cles_mois_tries:
-        data = resultats_mensuels[mois_str_key]
-        st.subheader(mois_str_key)
-        mois_a_des_donnees = False
-        for cle, valeurs in data.items():
-            if valeurs:
-                total_cle_mois = sum(valeurs)
-                st.write(f"**{cle}** : {valeurs} → Total : {total_cle_mois:.2f} €")
-                totaux[cle] += total_cle_mois
-                mois_a_des_donnees = True
-        if not mois_a_des_donnees:
-            st.write("Aucune des valeurs cibles n'a été trouvée pour ce mois.")
-        st.markdown("---")
-
-    st.header("🧾 Totaux annuels")
-    au_moins_un_total_annuel = False
-    for cle, total_annuel_cle in totaux.items():
-        if total_annuel_cle != 0.0 :
-             st.write(f"**{cle}** : {total_annuel_cle:.2f} €")
-             au_moins_un_total_annuel = True
+        data_mois = resultats_mensuels[mois_str_key]
+        ligne_tableau = {"MOIS": mois_str_key.capitalize()} # Mettre la première lettre en majuscule
+        for cle_longue, cle_courte in cles_a_chercher.items():
+            ligne_tableau[cle_courte] = sum(data_mois[cle_longue])
+        donnees_tableau.append(ligne_tableau)
     
-    if au_moins_un_total_annuel:
-        st.markdown("### **Total général des sommes extraites : {:.2f} €**".format(sum(totaux.values())))
+    # --- CRÉATION ET AFFICHAGE DU DATAFRAME ---
+    if donnees_tableau:
+        df = pd.DataFrame(donnees_tableau)
+
+        # Création de la ligne de totaux
+        total_row = df.sum(numeric_only=True).to_frame().T
+        total_row['MOIS'] = 'TOTAL ANNUEL'
         
+        # Style du DataFrame pour affichage
+        st.dataframe(df, hide_index=True, use_container_width=True)
+        
+        # Affichage des totaux de manière distincte en dessous
+        st.markdown("---")
+        st.subheader("🧾 Totaux Annuels")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("IR Exonérées", f"{total_row['IR EXO'].iloc[0]:.2f} €")
+        with col2:
+            st.metric("IR Non Exonérées", f"{total_row['IR NON EXO'].iloc[0]:.2f} €")
+        with col3:
+            st.metric("Indemnité Transport", f"{total_row['IND TRANSPORT'].iloc[0]:.2f} €")
+
+        total_general = total_row.drop(columns='MOIS').sum(axis=1).iloc[0]
+        st.markdown(f"#### Total Général des Sommes Extraites : **{total_general:.2f} €**")
+        
+        # Retourner les résultats pour une utilisation potentielle dans le script principal
         return {
-        "totaux_par_cle": totaux,
-        "total_general": sum(totaux.values())
-              }
+            "dataframe": df,
+            "totals": total_row.to_dict('records')[0]
+        }
     else:
-        st.info("Aucun montant significatif n'a été extrait pour calculer les totaux annuels.")
+        st.info("Aucun montant significatif n'a été extrait pour construire le tableau.")
