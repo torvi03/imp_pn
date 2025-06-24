@@ -77,12 +77,13 @@ with col_droite:
     
     # Lancer l'analyse si des fichiers ont été téléversés
     if fichiers_analyses:
-        # Mettre à jour le bon conteneur de résultats
         with st.spinner(f"Analyse de {len(fichiers_analyses)} fichier(s) en cours... ⏳"):
             if st.session_state.menu_actif == 'paie':
+                # Stocker le résultat retourné
                 st.session_state.resultats_paie = analyse_bulletins(fichiers_analyses)
             elif st.session_state.menu_actif == 'ep5':
-                st.session_state.resultats_ep5 = analyse_missions(fichiers_analyses)
+                # analyse_missions affiche déjà tout, donc pas besoin de stocker un retour pour l'instant
+                analyse_missions(fichiers_analyses)
                 st.balloons()
             elif st.session_state.menu_actif == 'attestation':
                 # La fonction analyse_attestation_nuitees affiche directement les résultats,
@@ -91,14 +92,16 @@ with col_droite:
 
     # Afficher les résultats stockés
     if st.session_state.resultats_paie:
-        with st.container(border=True):
-            st.subheader("💵 Total des Indemnités (Paie)")
-            total_paie = st.session_state.resultats_paie.get("total_general", 0.0)
-            st.metric("Total général extrait des bulletins", f"{total_paie:.2f} €")
-            # Vous pourriez ajouter un expander pour voir le détail
-            with st.expander("Voir le détail des totaux par catégorie"):
-                for cle, montant in st.session_state.resultats_paie.get("totaux_par_cle", {}).items():
-                    st.write(f"{cle}: {montant:.2f} €")
+        # Cet affichage est maintenant dans impot_calc.py au lieu de paie_app.py
+        # Il sera dans la colonne de droite comme vous le vouliez.
+        with col_droite: # En supposant que vous avez défini col_gauche, col_droite
+             with st.container(border=True):
+                st.subheader("💵 Total des Indemnités (Paie)")
+                total_paie = st.session_state.resultats_paie.get("total_general", 0.0)
+                st.metric("Total général extrait des bulletins", f"{total_paie:.2f} €")
+                with st.expander("Voir le détail des totaux par catégorie"):
+                    for cle, montant in st.session_state.resultats_paie.get("totaux_par_cle", {}).items():
+                        st.write(f"{cle}: {montant:.2f} €")
             
     if st.session_state.resultats_ep5:
         with st.container(border=True):
