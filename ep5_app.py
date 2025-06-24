@@ -72,7 +72,7 @@ def get_dgfip_code_for_escale(iata_code, ville, pays_iso):
 @st.cache_data 
 def load_indemnity_data(annee_str):
     nom_fichier_indemnites = f"dgfip_indemnites_{annee_str}.csv"
-    chemin_fichier_indemnites = f"impot_calc/{nom_fichier_indemnites}" 
+    chemin_fichier_indemnites = nom_fichier_indemnites
     if not os.path.exists(chemin_fichier_indemnites):
         chemin_fichier_indemnites_alt = f"../{nom_fichier_indemnites}" 
         if os.path.exists(chemin_fichier_indemnites_alt):
