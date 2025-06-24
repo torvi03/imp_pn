@@ -20,7 +20,7 @@ def activer_menu(menu):
     st.session_state.menu_actif = menu
 
 # --- PAGE PRINCIPALE ---
-st.title("📊 Assistant de Comptabilité de Vol")
+st.title("📊 Comptabilité de Vol")
 st.markdown("---")
 
 # Créer deux colonnes principales
