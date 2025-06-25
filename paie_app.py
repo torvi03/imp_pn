@@ -11,6 +11,7 @@ def analyse_bulletins(uploaded_files):
     NOTE : Cette fonction ne contient plus de code d'affichage Streamlit.
     """
     resultats_mensuels = {}
+    mois_uniques = set()
     
     def extraire_date_nom(nom_fichier):
         try:
@@ -44,6 +45,8 @@ def analyse_bulletins(uploaded_files):
         if not date_obj:
             fichiers_ignores.append(fichier.name)
             continue
+
+        mois_uniques.add((date_obj.year, date_obj.month))
 
         date_mois_str = date_obj.strftime("%B %Y")
         if date_mois_str not in resultats_mensuels:
@@ -121,6 +124,7 @@ def analyse_bulletins(uploaded_files):
             "totaux_par_cle": totaux_par_cle,
             "total_general": total_general,
             "fichiers_ignores": fichiers_ignores
+            "mois_comptes": len(mois_uniques)
         }
     else:
         return {
@@ -128,4 +132,5 @@ def analyse_bulletins(uploaded_files):
             "totaux_par_cle": {cle_courte: 0.0 for cle_courte in cles_a_chercher.values()},
             "total_general": 0.0,
             "fichiers_ignores": fichiers_ignores
+            "mois_comptes": len(mois_uniques) 
         }
