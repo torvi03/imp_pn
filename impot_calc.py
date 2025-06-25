@@ -145,4 +145,3 @@ with col_droite:
 
     # --- Message d'accueil si aucune analyse n'est lancée ---
     # ... (ce bloc reste identique) ...
-
