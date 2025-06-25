@@ -25,11 +25,9 @@ def analyse_bulletins(uploaded_files):
                     if match_alt_inv:
                         code_date_str = match_alt_inv.group(2) + match_alt_inv.group(1)
                     else:
-                        # On ne met plus de st.warning ici, la gestion des erreurs se fera dans le script principal
                         return None
             return datetime.strptime(code_date_str, "%m%Y")
         except Exception:
-            # En cas d'erreur, on retourne None pour que l'appelant puisse gérer
             return None
 
     fichiers_tries = sorted(uploaded_files, key=lambda f: extraire_date_nom(f.name) or datetime.min)
@@ -70,7 +68,6 @@ def analyse_bulletins(uploaded_files):
                                         except ValueError:
                                             pass
         except Exception as e:
-            # On pourrait logger l'erreur ici ou la retourner
             fichiers_ignores.append(f"{fichier.name} (erreur de lecture: {e})")
 
 
@@ -89,8 +86,17 @@ def analyse_bulletins(uploaded_files):
     for mois_str_key in cles_mois_tries:
         data_mois = resultats_mensuels[mois_str_key]
         ligne_tableau = {"MOIS": mois_str_key.capitalize()}
+        total_ligne = 0.0 # Initialiser le total pour cette ligne
+
         for cle_longue, cle_courte in cles_a_chercher.items():
-            ligne_tableau[cle_courte] = sum(data_mois.get(cle_longue, []))
+            montant = sum(data_mois.get(cle_longue, []))
+            ligne_tableau[cle_courte] = montant
+            total_ligne += montant # Ajouter le montant au total de la ligne
+        
+        # --- AJOUT DE LA COLONNE TOTAL ---
+        ligne_tableau["TOTAL"] = total_ligne
+        # --- FIN DE L'AJOUT ---
+
         donnees_tableau.append(ligne_tableau)
     
     # --- CRÉATION DU DATAFRAME ---
@@ -98,11 +104,18 @@ def analyse_bulletins(uploaded_files):
     if donnees_tableau:
         df = pd.DataFrame(donnees_tableau)
         
+        # S'assurer que la colonne TOTAL est la dernière
+        colonnes = list(df.columns)
+        if "TOTAL" in colonnes:
+            colonnes.remove("TOTAL")
+            colonnes.append("TOTAL")
+            df = df[colonnes]
+        
         # Calcul des totaux
-        totaux_par_cle = {col: df[col].sum() for col in df.columns if col != 'MOIS'}
+        # On exclut la nouvelle colonne TOTAL du calcul du total général pour ne pas le compter deux fois
+        totaux_par_cle = {col: df[col].sum() for col in df.columns if col not in ['MOIS', 'TOTAL']}
         total_general = sum(totaux_par_cle.values())
         
-        # --- NOUVEAU : Retourner un dictionnaire complet avec toutes les données ---
         return {
             "dataframe": df,
             "totaux_par_cle": totaux_par_cle,
@@ -110,7 +123,6 @@ def analyse_bulletins(uploaded_files):
             "fichiers_ignores": fichiers_ignores
         }
     else:
-        # Retourner une structure vide mais cohérente
         return {
             "dataframe": pd.DataFrame(),
             "totaux_par_cle": {cle_courte: 0.0 for cle_courte in cles_a_chercher.values()},
