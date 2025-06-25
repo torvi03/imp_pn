@@ -15,8 +15,8 @@ st.set_page_config(
 # --- Fonctions utilitaires ---
 @st.cache_data
 def convert_df_to_csv(df):
-    """Convertit un DataFrame en CSV (UTF-8) pour le téléchargement."""
-    # Important : l'encodage 'utf-8-sig' est souvent meilleur pour l'ouverture dans Excel
+    """Convertit un DataFrame en CSV (UTF-8 avec BOM) pour le téléchargement."""
+    # Important : l'encodage 'utf-8-sig' est souvent meilleur pour une ouverture correcte dans Excel
     return df.to_csv(index=False, sep=';').encode('utf-8-sig')
 
 # --- Initialisation de l'état de la session ---
@@ -41,7 +41,7 @@ def activer_menu(menu):
 st.title("📊 Comptabilité de Vol")
 st.markdown("---")
 
-col_gauche, col_droite = st.columns([1, 2])
+col_gauche, col_droite = st.columns([1, 2]) # 1/3 pour les contrôles, 2/3 pour les résultats
 
 # --- COLONNE DE GAUCHE (Contrôles & Uploads) ---
 with col_gauche:
@@ -58,15 +58,24 @@ with col_gauche:
     if st.session_state.menu_actif == 'paie':
         with st.container(border=True):
             st.subheader("Téléverser Bulletins de Paie")
-            fichiers_analyses = st.file_uploader("Sélectionnez vos fichiers PDF de paie :", type="pdf", accept_multiple_files=True, key="paie_uploader")
+            fichiers_analyses = st.file_uploader(
+                "Sélectionnez vos fichiers PDF de paie :", type="pdf",
+                accept_multiple_files=True, key="paie_uploader"
+            )
     elif st.session_state.menu_actif == 'ep5':
         with st.container(border=True):
             st.subheader("Téléverser Fichiers EP5")
-            fichiers_analyses = st.file_uploader("Sélectionnez vos fichiers PDF EP4/EP5 :", type="pdf", accept_multiple_files=True, key="ep5_uploader")
+            fichiers_analyses = st.file_uploader(
+                "Sélectionnez vos fichiers PDF EP4/EP5 :", type="pdf",
+                accept_multiple_files=True, key="ep5_uploader"
+            )
     elif st.session_state.menu_actif == 'attestation':
         with st.container(border=True):
             st.subheader("Téléverser Attestations")
-            fichiers_analyses = st.file_uploader("Sélectionnez les PDF contenant les attestations annuelles :", type="pdf", accept_multiple_files=True, key="attestation_uploader")
+            fichiers_analyses = st.file_uploader(
+                "Sélectionnez les PDF contenant les attestations annuelles :", type="pdf",
+                accept_multiple_files=True, key="attestation_uploader"
+            )
 
 # --- COLONNE DE DROITE (Affichage des Résultats) ---
 with col_droite:
@@ -92,19 +101,22 @@ with col_droite:
                 st.markdown("##### Synthèse Mensuelle")
                 st.dataframe(df, hide_index=True, use_container_width=True)
 
-                # --- AJOUT DU BOUTON DE TÉLÉCHARGEMENT ---
                 csv_paie = convert_df_to_csv(df)
                 st.download_button(
                     label="📥 Télécharger la synthèse de paie (CSV)",
                     data=csv_paie,
-                    file_name=f"synthese_paie.csv",
+                    file_name="synthese_paie.csv",
                     mime='text/csv',
                 )
                 st.markdown("---")
-                # --- FIN DE L'AJOUT ---
                 
                 st.markdown("##### Totaux Annuels")
-                # ... (le reste de l'affichage des totaux reste identique) ...
+                totaux = res.get("totaux_par_cle", {})
+                c1, c2, c3 = st.columns(3)
+                c1.metric("IR Exonérées", f"{totaux.get('IR EXO', 0.0):.2f} €")
+                c2.metric("IR Non Exonérées", f"{totaux.get('IR NON EXO', 0.0):.2f} €")
+                c3.metric("Indemnité Transport", f"{totaux.get('IND TRANSPORT', 0.0):.2f} €")
+                st.markdown(f"#### Total Général : **{res.get('total_general', 0.0):.2f} €**")
             else:
                 st.info("Aucune donnée n'a pu être extraite des bulletins de paie valides.")
 
@@ -123,7 +135,6 @@ with col_droite:
                     df_rotations = res.get("rotations_df", pd.DataFrame())
                     st.dataframe(df_rotations, hide_index=True, use_container_width=True)
                     
-                    # --- AJOUT DU BOUTON DE TÉLÉCHARGEMENT ---
                     if not df_rotations.empty:
                         csv_rotations = convert_df_to_csv(df_rotations)
                         st.download_button(
@@ -132,16 +143,45 @@ with col_droite:
                            file_name=f"synthese_rotations_{res.get('annee_predominante', 'data')}.csv",
                            mime='text/csv',
                         )
-                    # --- FIN DE L'AJOUT ---
-
                 with tab_stats:
-                    # ... (le reste de l'affichage des statistiques reste identique) ...
+                    st.markdown("Statistiques par segment de vol :")
+                    col_type, col_immat = st.columns(2)
+                    df_types = res.get("stats_avions_type_df")
+                    df_immats = res.get("stats_avions_immat_df")
+
+                    with col_type:
+                        st.write("**Par Type d'Avion :**")
+                        if isinstance(df_types, pd.DataFrame) and not df_types.empty:
+                            st.bar_chart(df_types.set_index('Type Avion'))
+                    with col_immat:
+                        st.write("**Par Immatriculation :**")
+                        if isinstance(df_immats, pd.DataFrame) and not df_immats.empty:
+                            st.bar_chart(df_immats.set_index('Immatriculation'))
             else:
                 st.warning("Aucune rotation ou segment de vol n'a pu être extrait des fichiers fournis.")
 
     # --- Bloc d'affichage pour les résultats d'ATTESTATION ---
     if st.session_state.resultats_attestation:
-        # ... (ce bloc reste identique car il n'y a pas de tableau à exporter) ...
+        with st.container(border=True):
+            res = st.session_state.resultats_attestation
+            st.subheader("🏠 Synthèse des Attestations de Nuitées")
+            
+            resultats_annuels = res.get("resultats", {})
+            if resultats_annuels:
+                resultats_tries = sorted(resultats_annuels.items(), key=lambda item: item[0], reverse=True)
+                for annee, montant in resultats_tries:
+                    st.metric(label=f"Total Frais Hébergement pour {annee}", value=f"{montant:.2f} €")
+            else:
+                st.info("Aucune information sur les frais d'hébergement n'a pu être extraite.")
 
     # --- Message d'accueil si aucune analyse n'est lancée ---
-    # ... (ce bloc reste identique) ...
+    aucun_resultat = not any([
+        st.session_state.resultats_paie,
+        st.session_state.resultats_ep5,
+        st.session_state.resultats_attestation
+    ])
+    if aucun_resultat:
+        if st.session_state.menu_actif:
+            st.info("Les résultats s'afficheront ici après avoir téléversé et analysé vos fichiers.")
+        else:
+            st.info("Bienvenue ! Veuillez choisir une analyse dans le menu de gauche pour commencer.")
