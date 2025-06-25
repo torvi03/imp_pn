@@ -2,9 +2,14 @@ import streamlit as st
 import pdfplumber
 import re
 from datetime import datetime
-import pandas as pd # S'assurer que pandas est importé
+import pandas as pd
 
 def analyse_bulletins(uploaded_files):
+    """
+    Analyse les bulletins de paie PDF, extrait les données financières clés,
+    et retourne un dictionnaire contenant un DataFrame et les totaux.
+    NOTE : Cette fonction ne contient plus de code d'affichage Streamlit.
+    """
     resultats_mensuels = {}
     
     def extraire_date_nom(nom_fichier):
@@ -20,24 +25,26 @@ def analyse_bulletins(uploaded_files):
                     if match_alt_inv:
                         code_date_str = match_alt_inv.group(2) + match_alt_inv.group(1)
                     else:
-                        st.warning(f"Format de date non reconnu dans : {nom_fichier}.")
-                        return datetime.min 
+                        # On ne met plus de st.warning ici, la gestion des erreurs se fera dans le script principal
+                        return None
             return datetime.strptime(code_date_str, "%m%Y")
         except Exception:
-            st.warning(f"Erreur de parsing de date pour : {nom_fichier}.")
-            return datetime.min
+            # En cas d'erreur, on retourne None pour que l'appelant puisse gérer
+            return None
 
-    fichiers_tries = sorted(uploaded_files, key=lambda f: extraire_date_nom(f.name))
+    fichiers_tries = sorted(uploaded_files, key=lambda f: extraire_date_nom(f.name) or datetime.min)
     cles_a_chercher = {
         "IR EXONEREES": "IR EXO",
         "IR NON EXONEREES": "IR NON EXO", 
         "REMB.CARTE NAVIGO": "IND TRANSPORT"
     }
 
+    fichiers_ignores = []
+
     for fichier in fichiers_tries:
         date_obj = extraire_date_nom(fichier.name)
-        if date_obj == datetime.min and fichier.name != "":
-            st.error(f"Fichier '{fichier.name}' ignoré (date non déterminée).")
+        if not date_obj:
+            fichiers_ignores.append(fichier.name)
             continue
 
         date_mois_str = date_obj.strftime("%B %Y")
@@ -63,16 +70,19 @@ def analyse_bulletins(uploaded_files):
                                         except ValueError:
                                             pass
         except Exception as e:
-            st.error(f"Erreur lors de la lecture du fichier PDF {fichier.name} : {e}")
-            if date_mois_str not in resultats_mensuels :
-                 resultats_mensuels[date_mois_str] = {cle_init: [] for cle_init in cles_a_chercher.keys()}
+            # On pourrait logger l'erreur ici ou la retourner
+            fichiers_ignores.append(f"{fichier.name} (erreur de lecture: {e})")
+
 
     if not resultats_mensuels:
-        st.info("Aucune donnée n'a pu être extraite des bulletins de paie fournis.")
-        return # Ne rien retourner si aucun fichier n'a été traité
+        return {
+            "dataframe": pd.DataFrame(),
+            "totaux_par_cle": {},
+            "total_general": 0.0,
+            "fichiers_ignores": fichiers_ignores
+        }
 
-    
-    # --- PRÉPARATION DES DONNÉES POUR LE TABLEAU ---
+    # --- PRÉPARATION DES DONNÉES POUR LE DATAFRAME ---
     donnees_tableau = []
     cles_mois_tries = sorted(resultats_mensuels.keys(), key=lambda mois_str_key: datetime.strptime(mois_str_key, "%B %Y"))
 
@@ -80,45 +90,30 @@ def analyse_bulletins(uploaded_files):
         data_mois = resultats_mensuels[mois_str_key]
         ligne_tableau = {"MOIS": mois_str_key.capitalize()}
         for cle_longue, cle_courte in cles_a_chercher.items():
-            ligne_tableau[cle_courte] = sum(data_mois.get(cle_longue, [])) # Utiliser .get pour plus de sécurité
+            ligne_tableau[cle_courte] = sum(data_mois.get(cle_longue, []))
         donnees_tableau.append(ligne_tableau)
     
-    # --- CRÉATION ET AFFICHAGE DU DATAFRAME ---
-    st.header("📊 Synthèse Mensuelle de la Paie")
+    # --- CRÉATION DU DATAFRAME ---
+    df = pd.DataFrame()
     if donnees_tableau:
         df = pd.DataFrame(donnees_tableau)
-        
-        # Style du DataFrame pour affichage
-        st.dataframe(df, hide_index=True, use_container_width=True)
         
         # Calcul des totaux
         totaux_par_cle = {col: df[col].sum() for col in df.columns if col != 'MOIS'}
         total_general = sum(totaux_par_cle.values())
         
-        # Affichage des totaux de manière distincte en dessous
-        st.markdown("---")
-        st.subheader("🧾 Totaux Annuels")
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("IR Exonérées", f"{totaux_par_cle.get('IR EXO', 0.0):.2f} €")
-        with col2:
-            st.metric("IR Non Exonérées", f"{totaux_par_cle.get('IR NON EXO', 0.0):.2f} €")
-        with col3:
-            st.metric("Indemnité Transport", f"{totaux_par_cle.get('IND TRANSPORT', 0.0):.2f} €")
-
-        st.markdown(f"#### Total Général des Sommes Extraites : **{total_general:.2f} €**")
-        
-        # --- NOUVEAU : Retourner les résultats pour le script principal ---
+        # --- NOUVEAU : Retourner un dictionnaire complet avec toutes les données ---
         return {
+            "dataframe": df,
             "totaux_par_cle": totaux_par_cle,
-            "total_general": total_general
+            "total_general": total_general,
+            "fichiers_ignores": fichiers_ignores
         }
     else:
-        st.info("Aucun montant significatif n'a été extrait pour construire le tableau.")
-        # Retourner un résultat vide mais structuré
+        # Retourner une structure vide mais cohérente
         return {
+            "dataframe": pd.DataFrame(),
             "totaux_par_cle": {cle_courte: 0.0 for cle_courte in cles_a_chercher.values()},
-            "total_general": 0.0
+            "total_general": 0.0,
+            "fichiers_ignores": fichiers_ignores
         }
-
