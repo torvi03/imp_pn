@@ -7,12 +7,15 @@ import pandas as pd
 def analyse_bulletins(uploaded_files):
     """
     Analyse les bulletins de paie PDF, extrait les données financières clés,
-    et retourne un dictionnaire contenant un DataFrame et les totaux.
-    NOTE : Cette fonction ne contient plus de code d'affichage Streamlit.
+    et retourne un dictionnaire complet incluant le compte des mois uniques.
     """
     resultats_mensuels = {}
+    fichiers_ignores = []
+    # --- NOUVEAU : Set pour compter les mois uniques ---
+    mois_uniques = set()
     
     def extraire_date_nom(nom_fichier):
+        """Extrait la date (mois/année) du nom de fichier."""
         try:
             base = nom_fichier.replace(".pdf", "")
             code_date_str = base[-6:] 
@@ -37,13 +40,14 @@ def analyse_bulletins(uploaded_files):
         "REMB.CARTE NAVIGO": "IND TRANSPORT"
     }
 
-    fichiers_ignores = []
-
     for fichier in fichiers_tries:
         date_obj = extraire_date_nom(fichier.name)
         if not date_obj:
             fichiers_ignores.append(fichier.name)
             continue
+
+        # --- NOUVEAU : On ajoute le tuple (année, mois) pour garantir l'unicité ---
+        mois_uniques.add((date_obj.year, date_obj.month))
 
         date_mois_str = date_obj.strftime("%B %Y")
         if date_mois_str not in resultats_mensuels:
@@ -76,7 +80,8 @@ def analyse_bulletins(uploaded_files):
             "dataframe": pd.DataFrame(),
             "totaux_par_cle": {},
             "total_general": 0.0,
-            "fichiers_ignores": fichiers_ignores
+            "fichiers_ignores": fichiers_ignores,
+            "mois_comptes": len(mois_uniques)
         }
 
     # --- PRÉPARATION DES DONNÉES POUR LE DATAFRAME ---
@@ -86,17 +91,14 @@ def analyse_bulletins(uploaded_files):
     for mois_str_key in cles_mois_tries:
         data_mois = resultats_mensuels[mois_str_key]
         ligne_tableau = {"MOIS": mois_str_key.capitalize()}
-        total_ligne = 0.0 # Initialiser le total pour cette ligne
+        total_ligne = 0.0
 
         for cle_longue, cle_courte in cles_a_chercher.items():
             montant = sum(data_mois.get(cle_longue, []))
             ligne_tableau[cle_courte] = montant
-            total_ligne += montant # Ajouter le montant au total de la ligne
+            total_ligne += montant
         
-        # --- AJOUT DE LA COLONNE TOTAL ---
         ligne_tableau["TOTAL"] = total_ligne
-        # --- FIN DE L'AJOUT ---
-
         donnees_tableau.append(ligne_tableau)
     
     # --- CRÉATION DU DATAFRAME ---
@@ -104,15 +106,12 @@ def analyse_bulletins(uploaded_files):
     if donnees_tableau:
         df = pd.DataFrame(donnees_tableau)
         
-        # S'assurer que la colonne TOTAL est la dernière
         colonnes = list(df.columns)
         if "TOTAL" in colonnes:
             colonnes.remove("TOTAL")
             colonnes.append("TOTAL")
             df = df[colonnes]
         
-        # Calcul des totaux
-        # On exclut la nouvelle colonne TOTAL du calcul du total général pour ne pas le compter deux fois
         totaux_par_cle = {col: df[col].sum() for col in df.columns if col not in ['MOIS', 'TOTAL']}
         total_general = sum(totaux_par_cle.values())
         
@@ -120,12 +119,14 @@ def analyse_bulletins(uploaded_files):
             "dataframe": df,
             "totaux_par_cle": totaux_par_cle,
             "total_general": total_general,
-            "fichiers_ignores": fichiers_ignores
+            "fichiers_ignores": fichiers_ignores,
+            "mois_comptes": len(mois_uniques)
         }
     else:
         return {
             "dataframe": pd.DataFrame(),
             "totaux_par_cle": {cle_courte: 0.0 for cle_courte in cles_a_chercher.values()},
             "total_general": 0.0,
-            "fichiers_ignores": fichiers_ignores
+            "fichiers_ignores": fichiers_ignores,
+            "mois_comptes": len(mois_uniques)
         }
