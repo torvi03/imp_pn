@@ -7,11 +7,11 @@ import pandas as pd
 def analyse_bulletins(uploaded_files):
     """
     Analyse les bulletins de paie PDF, extrait les données financières clés,
-    et retourne un dictionnaire complet incluant le compte des mois uniques.
+    et retourne un dictionnaire complet incluant l'ensemble des mois uniques trouvés.
     """
     resultats_mensuels = {}
     fichiers_ignores = []
-    # --- NOUVEAU : Set pour compter les mois uniques ---
+    # --- MODIFIÉ : On garde le set pour le retourner à la fin ---
     mois_uniques = set()
     
     def extraire_date_nom(nom_fichier):
@@ -46,7 +46,6 @@ def analyse_bulletins(uploaded_files):
             fichiers_ignores.append(fichier.name)
             continue
 
-        # --- NOUVEAU : On ajoute le tuple (année, mois) pour garantir l'unicité ---
         mois_uniques.add((date_obj.year, date_obj.month))
 
         date_mois_str = date_obj.strftime("%B %Y")
@@ -74,38 +73,23 @@ def analyse_bulletins(uploaded_files):
         except Exception as e:
             fichiers_ignores.append(f"{fichier.name} (erreur de lecture: {e})")
 
-
-    if not resultats_mensuels:
-        return {
-            "dataframe": pd.DataFrame(),
-            "totaux_par_cle": {},
-            "total_general": 0.0,
-            "fichiers_ignores": fichiers_ignores,
-            "mois_comptes": len(mois_uniques)
-        }
-
-    # --- PRÉPARATION DES DONNÉES POUR LE DATAFRAME ---
     donnees_tableau = []
-    cles_mois_tries = sorted(resultats_mensuels.keys(), key=lambda mois_str_key: datetime.strptime(mois_str_key, "%B %Y"))
-
-    for mois_str_key in cles_mois_tries:
-        data_mois = resultats_mensuels[mois_str_key]
-        ligne_tableau = {"MOIS": mois_str_key.capitalize()}
-        total_ligne = 0.0
-
-        for cle_longue, cle_courte in cles_a_chercher.items():
-            montant = sum(data_mois.get(cle_longue, []))
-            ligne_tableau[cle_courte] = montant
-            total_ligne += montant
-        
-        ligne_tableau["TOTAL"] = total_ligne
-        donnees_tableau.append(ligne_tableau)
+    if resultats_mensuels:
+        cles_mois_tries = sorted(resultats_mensuels.keys(), key=lambda mois_str_key: datetime.strptime(mois_str_key, "%B %Y"))
+        for mois_str_key in cles_mois_tries:
+            data_mois = resultats_mensuels[mois_str_key]
+            ligne_tableau = {"MOIS": mois_str_key.capitalize()}
+            total_ligne = 0.0
+            for cle_longue, cle_courte in cles_a_chercher.items():
+                montant = sum(data_mois.get(cle_longue, []))
+                ligne_tableau[cle_courte] = montant
+                total_ligne += montant
+            ligne_tableau["TOTAL"] = total_ligne
+            donnees_tableau.append(ligne_tableau)
     
-    # --- CRÉATION DU DATAFRAME ---
-    df = pd.DataFrame()
-    if donnees_tableau:
-        df = pd.DataFrame(donnees_tableau)
-        
+    df = pd.DataFrame(donnees_tableau) if donnees_tableau else pd.DataFrame()
+    
+    if not df.empty:
         colonnes = list(df.columns)
         if "TOTAL" in colonnes:
             colonnes.remove("TOTAL")
@@ -120,13 +104,13 @@ def analyse_bulletins(uploaded_files):
             "totaux_par_cle": totaux_par_cle,
             "total_general": total_general,
             "fichiers_ignores": fichiers_ignores,
-            "mois_comptes": len(mois_uniques)
+            "mois_trouves": mois_uniques # --- MODIFIÉ ---
         }
     else:
         return {
             "dataframe": pd.DataFrame(),
-            "totaux_par_cle": {cle_courte: 0.0 for cle_courte in cles_a_chercher.values()},
+            "totaux_par_cle": {},
             "total_general": 0.0,
             "fichiers_ignores": fichiers_ignores,
-            "mois_comptes": len(mois_uniques)
+            "mois_trouves": mois_uniques # --- MODIFIÉ ---
         }
