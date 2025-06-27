@@ -13,6 +13,38 @@ def convert_df_to_csv(df):
     """Convertit un DataFrame en CSV (UTF-8 avec BOM) pour le téléchargement."""
     return df.to_csv(index=False, sep=';').encode('utf-8-sig')
 
+# --- NOUVELLE FONCTION D'AFFICHAGE DU BILAN ---
+def afficher_bilan_mensuel(res_dict, type_doc):
+    """Affiche un bilan visuel et textuel de la complétude des mois."""
+    st.markdown(f"**Bilan de complétude pour : {type_doc}**")
+    
+    # Récupère l'ensemble des tuples (année, mois)
+    mois_trouves_tuples = res_dict.get("mois_trouves", set()) if res_dict else set()
+
+    if not mois_trouves_tuples:
+        st.info("Aucun document de ce type n'a été analysé.")
+        return
+
+    # Détermine l'année d'analyse (on prend la première trouvée)
+    # et on ne garde que les mois de cette année pour éviter les confusions
+    annee_analyse = next(iter(mois_trouves_tuples))[0]
+    mois_numeros = {m for y, m in mois_trouves_tuples if y == annee_analyse}
+
+    tous_les_mois = set(range(1, 13))
+    mois_manquants_nums = sorted(list(tous_les_mois - mois_numeros))
+    
+    compte_mois = len(mois_numeros)
+
+    if compte_mois == 12:
+        st.success(f"✅ Complet ! {compte_mois}/12 mois pour l'année {annee_analyse} ont été détectés.")
+    else:
+        st.warning(f"⚠️ Incomplet. {compte_mois}/12 mois pour l'année {annee_analyse} ont été détectés.")
+        if mois_manquants_nums:
+            # Convertit les numéros de mois en noms pour un affichage clair
+            noms_mois = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
+            mois_manquants_str = ", ".join([noms_mois[m-1] for m in mois_manquants_nums])
+            st.error(f"**Mois manquants :** {mois_manquants_str}")
+
 # --- Initialisation de l'état de la session ---
 if 'menu_actif' not in st.session_state:
     st.session_state.menu_actif = None
@@ -27,12 +59,10 @@ if 'show_synthese' not in st.session_state:
 
 # --- Fonctions de navigation ---
 def activer_menu(menu):
-    """Change le menu d'analyse actif et cache la synthèse."""
     st.session_state.menu_actif = menu
     st.session_state.show_synthese = False
 
 def activer_synthese():
-    """Active l'affichage de la synthèse et cache les analyses individuelles."""
     st.session_state.show_synthese = True
     st.session_state.menu_actif = None
 
@@ -41,20 +71,16 @@ st.title("📊 Comptabilité de Vol")
 st.markdown("---")
 col_gauche, col_droite = st.columns([1, 2])
 
-# --- COLONNE DE GAUCHE (MENU RÉORGANISÉ) ---
+# --- COLONNE DE GAUCHE (MENU) ---
 with col_gauche:
     st.header("🗂️ Actions")
-    
     st.write("**1. Analyser les documents**")
     st.button("💵 Analyse des Bulletins de Paie", on_click=activer_menu, args=('paie',), use_container_width=True)
     st.button("✈️ Analyse des Rotations (EP5)", on_click=activer_menu, args=('ep5',), use_container_width=True)
     st.button("🏠 Analyse Attestation Nuitées", on_click=activer_menu, args=('attestation',), use_container_width=True)
-    
     st.markdown("---")
-
     st.write("**2. Obtenir le résumé final**")
     st.button("SYNTHESE ANNUELLE", on_click=activer_synthese, use_container_width=True, type="primary")
-    
     st.markdown("---")
     
     fichiers_analyses = None
@@ -89,34 +115,16 @@ with col_droite:
         with st.container(border=True):
             st.subheader("🧮 Synthèse Annuelle Globale")
             
-            res_paie = st.session_state.resultats_paie
-            res_ep5 = st.session_state.resultats_ep5
-            res_attest = st.session_state.resultats_attestation
-            
-            # --- NOUVEAU : Tableau de bord de vérification ---
-            st.markdown("**Vérification de la complétude des documents**")
-            col_check1, col_check2 = st.columns(2)
-            
-            with col_check1:
-                compte_paie = res_paie.get("mois_comptes", 0) if res_paie else 0
-                st.write("Bulletins de Paie :")
-                if compte_paie == 12:
-                    st.success(f"✅ {compte_paie}/12 mois complets")
-                else:
-                    st.warning(f"⚠️ {compte_paie}/12 mois détectés")
-                st.progress(compte_paie / 12)
-
-            with col_check2:
-                compte_ep5 = res_ep5.get("mois_comptes", 0) if res_ep5 else 0
-                st.write("Fichiers EP5 :")
-                if compte_ep5 == 12:
-                    st.success(f"✅ {compte_ep5}/12 mois complets")
-                else:
-                    st.warning(f"⚠️ {compte_ep5}/12 mois détectés")
-                st.progress(compte_ep5 / 12)
+            # --- MODIFIÉ : Utilisation de la nouvelle fonction de bilan ---
+            afficher_bilan_mensuel(st.session_state.resultats_paie, "Bulletins de Paie")
+            st.markdown("---")
+            afficher_bilan_mensuel(st.session_state.resultats_ep5, "Fichiers EP5")
             st.markdown("---")
             
             st.markdown("**Résumé financier**")
+            res_paie = st.session_state.resultats_paie
+            res_ep5 = st.session_state.resultats_ep5
+            res_attest = st.session_state.resultats_attestation
             total_paie = res_paie.get("total_general", 0.0) if res_paie else 0.0
             total_ep5 = res_ep5.get("total_indemnites", 0.0) if res_ep5 else 0.0
             total_attestation = sum(res_attest["resultats"].values()) if res_attest and res_attest.get("resultats") else 0.0
@@ -125,9 +133,9 @@ with col_droite:
             if not any([res_paie, res_ep5, res_attest]):
                  st.warning("Aucune analyse n'a encore été effectuée. Veuillez lancer une analyse individuelle avant de demander la synthèse.")
             else:
-                st.metric("💵 Total des indemnités de Paie", f"{total_paie:.2f} €", help="Calculé depuis la dernière analyse de paie.")
-                st.metric("✈️ Total des indemnités de découcher (EP5)", f"{total_ep5:.2f} €", help="Calculé depuis la dernière analyse EP5.")
-                st.metric("🏠 Total des frais d'hébergement (Attestations)", f"{total_attestation:.2f} €", help="Calculé depuis la dernière analyse d'attestations.")
+                st.metric("💵 Total des indemnités de Paie", f"{total_paie:.2f} €")
+                st.metric("✈️ Total des indemnités de découcher (EP5)", f"{total_ep5:.2f} €")
+                st.metric("🏠 Total des frais d'hébergement (Attestations)", f"{total_attestation:.2f} €")
                 st.markdown("---")
                 st.markdown(f"### 💰 Total Général à considérer : **{grand_total:.2f} €**")
 
@@ -136,6 +144,9 @@ with col_droite:
         with st.container(border=True):
             res = st.session_state.resultats_paie
             st.subheader("💵 Synthèse des Bulletins de Paie")
+            # --- NOUVEAU : Appel du bilan mensuel ici aussi ---
+            afficher_bilan_mensuel(res, "Bulletins de Paie")
+            st.markdown("---")
             df = res.get("dataframe")
             if isinstance(df, pd.DataFrame) and not df.empty:
                 st.dataframe(df, hide_index=True, use_container_width=True)
@@ -148,6 +159,9 @@ with col_droite:
         with st.container(border=True):
             res = st.session_state.resultats_ep5
             st.subheader("✈️ Synthèse des Rotations (EP5)")
+            # --- NOUVEAU : Appel du bilan mensuel ici aussi ---
+            afficher_bilan_mensuel(res, "Fichiers EP5")
+            st.markdown("---")
             if res.get("has_results"):
                 st.metric(f"💰 Total Indemnités pour {res.get('annee_predominante', 'N/A')}", f"{res.get('total_indemnites', 0.0):.2f} EUR")
                 tab1, tab2 = st.tabs(["📅 Rotations", "✈️ Stats Avions"])
@@ -162,7 +176,6 @@ with col_droite:
                     df_types = res.get("stats_avions_type_df", pd.DataFrame())
                     if not df_types.empty:
                         st.bar_chart(df_types.set_index('Type Avion'))
-                    
                     st.write("**Statistiques par Immatriculation :**")
                     df_immats = res.get("stats_avions_immat_df", pd.DataFrame())
                     if not df_immats.empty:
